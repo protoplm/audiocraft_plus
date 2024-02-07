@@ -813,10 +813,28 @@ def calc_time(gen_type, s, duration, overlap, d0, d1, d2, d3, d4, d5, d6, d7, d8
     return calc[0], calc[1], calc[2], calc[3], calc[4], calc[5], calc[6], calc[7], calc[8], calc[9]
 
 
-def predict_full(gen_type, model, decoder, custom_model, prompt_amount, struc_prompt, bpm, key, scale, global_prompt, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, audio, mode, trim_start, trim_end, duration, topk, topp, temperature, cfg_coef, seed, overlap, image, height, width, background, bar1, bar2, channel, sr_select, progress=gr.Progress()):
+def predict_full(gen_type, model, decoder, custom_model, prompt_amount, struc_prompt, bpm, key, scale, global_prompt, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, audio, mode, trim_start, trim_end, duration, topk, topp, temperature, cfg_coef, initial_seed, overlap, image, height, width, background, bar1, bar2, channel, sr_select, progress=gr.Progress()):
     global INTERRUPTING
     global USE_DIFFUSION
     INTERRUPTING = False
+
+
+    prompts = ["Craft a thunderous opening riff for the guitar in a progressive metal anthem.",
+    "Compose a soaring chorus where the vocalist's voice harmonizes perfectly with the piano keys.",
+    "Design an intricate instrumental section featuring virtuosic drumming patterns that drive the energy of the song.",
+    "Create a melodic bridge played on the violin, weaving a delicate emotional thread through the powerful metal backdrop.",
+    "Create an intense opening riff for a progressive metal song.",
+    "Write a powerful chorus with soaring vocals and a driving bassline.",
+    "Design a complex instrumental section featuring virtuosic guitar solos and intricate keyboard patterns.",
+    "Compose a melodic bridge that contrasts the main theme while maintaining the overall energy of the song",
+    "Develop a haunting intro melody played on the cello, setting the stage for an epic journey through progressive metal.", 
+    "Create a driving rhythm section where the bass and drums collaborate to build tension in the verses.", 
+    "Write a complex guitar solo that showcases both technical proficiency and emotive storytelling.", 
+    "Design a dynamic bridge that transitions from aggressive metal to introspective piano, providing a contrast in emotions.", 
+    "Design an emotionally charged breakdown section where the music slows down, harmonies become more prominent, and the lyrics delve into profound themes.", 
+    "Create a dynamic instrumental passage that incorporates unexpected time signatures or modulations, showcasing the band's versatility and musicianship.", 
+    "Write a powerful solo for the lead guitarist that combines aggressive riffs with delicate melodic lines, reflecting the duality of progressive metal.", 
+    "Compose a climactic outro that builds upon the song's previous sections, incorporating elements from each part to create a sense of unity and progression."]
 
     if gen_type == "audio":
         custom_model = None
@@ -858,72 +876,76 @@ def predict_full(gen_type, model, decoder, custom_model, prompt_amount, struc_pr
     else:
         if MOVE_TO_CPU:
             MODEL.to('cuda')
+    for i in range(0,len(prompts)-1):
+        p0 = prompts[i]
 
-    if seed < 0:
-        seed = random.randint(0, 0xffff_ffff_ffff)
-    torch.manual_seed(seed)
-
-    def _progress(generated, to_generate):
-        progress((min(generated, to_generate), to_generate))
-        if INTERRUPTING:
-            raise gr.Error("Interrupted.")
-    MODEL.set_custom_progress_callback(_progress)
-
-    audio_mode = "none"
-    melody = None
-    sample = None
-    if audio:
-      audio_mode = mode
-      if mode == "sample":
-          sample = audio
-      elif mode == "melody":
-          melody = audio
-
-    custom_model_shrt = "none" if model != "GrandaddyShmax/musicgen-custom" else custom_model_shrt
-
-    text_cat = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9]
-    drag_cat = [d0, d1, d2, d3, d4, d5, d6, d7, d8, d9]
-    texts = []
-    raw_texts = []
-    ind = 0
-    ind2 = 0
-    while ind < prompt_amount:
-        for ind2 in range(int(drag_cat[ind])):
-            if not struc_prompt:
-                texts.append(text_cat[ind])
-                global_prompt = "none"
-                bpm = "none"
-                key = "none"
-                scale = "none"
-                raw_texts.append(text_cat[ind])
+        for i in range(0,15):
+            if initial_seed < 0:
+                seed = random.randint(0, 0xffff_ffff_ffff)
+                torch.manual_seed(seed)
             else:
-                if gen_type == "music":
-                    bpm_str = str(bpm) + " bpm"
-                    key_str = ", " + str(key) + " " + str(scale)
-                    global_str = (", " + str(global_prompt)) if str(global_prompt) != "" else ""
-                elif gen_type == "audio":
-                    bpm_str = ""
-                    key_str = ""
-                    global_str = (str(global_prompt)) if str(global_prompt) != "" else ""
-                texts_str = (", " + str(text_cat[ind])) if str(text_cat[ind]) != "" else ""
-                texts.append(bpm_str + key_str + global_str + texts_str)
-                raw_texts.append(text_cat[ind])
-        ind2 = 0
-        ind = ind + 1
+                torch.manual_seed(initial_seed)
 
-    outs, outs_audio, outs_backup, input_length = _do_predictions(
-        gen_type, [texts], [melody], sample, trim_start, trim_end, duration, image, height, width, background, bar1, bar2, channel, sr_select, progress=True,
-        top_k=topk, top_p=topp, temperature=temperature, cfg_coef=cfg_coef, extend_stride=MODEL.max_duration-overlap)
-    tags = [str(global_prompt), str(bpm), str(key), str(scale), str(raw_texts), str(duration), str(overlap), str(seed), str(audio_mode), str(input_length), str(channel), str(sr_select), str(model_shrt), str(custom_model_shrt), str(decoder), str(topk), str(topp), str(temperature), str(cfg_coef), str(gen_type)]
-    wav_target, mp4_target, json_target = save_outputs(outs[0], outs_audio[0], tags, gen_type);
-    # Removes the temporary files.
-    for out in outs:
-        os.remove(out)
-    for out in outs_audio:
-        os.remove(out)
+            def _progress(generated, to_generate):
+                progress((min(generated, to_generate), to_generate))
+                if INTERRUPTING:
+                    raise gr.Error("Interrupted.")
+            MODEL.set_custom_progress_callback(_progress)
 
+            audio_mode = "none"
+            melody = None
+            sample = None
+            if audio:
+                audio_mode = mode
+            if mode == "sample":
+                sample = audio
+            elif mode == "melody":
+                melody = audio
+
+            custom_model_shrt = "none" if model != "GrandaddyShmax/musicgen-custom" else custom_model_shrt
+
+            text_cat = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9]
+            drag_cat = [d0, d1, d2, d3, d4, d5, d6, d7, d8, d9]
+            texts = []
+            raw_texts = []
+            ind = 0
+            ind2 = 0
+            while ind < prompt_amount:
+                for ind2 in range(int(drag_cat[ind])):
+                    if not struc_prompt:
+                        texts.append(text_cat[ind])
+                        global_prompt = "none"
+                        bpm = "none"
+                        key = "none"
+                        scale = "none"
+                        raw_texts.append(text_cat[ind])
+                    else:
+                        if gen_type == "music":
+                            bpm_str = str(bpm) + " bpm"
+                            key_str = ", " + str(key) + " " + str(scale)
+                            global_str = (", " + str(global_prompt)) if str(global_prompt) != "" else ""
+                        elif gen_type == "audio":
+                            bpm_str = ""
+                            key_str = ""
+                            global_str = (str(global_prompt)) if str(global_prompt) != "" else ""
+                        texts_str = (", " + str(text_cat[ind])) if str(text_cat[ind]) != "" else ""
+                        texts.append(bpm_str + key_str + global_str + texts_str)
+                        raw_texts.append(text_cat[ind])
+                ind2 = 0
+                ind = ind + 1
+
+            outs, outs_audio, outs_backup, input_length = _do_predictions(
+                gen_type, [texts], [melody], sample, trim_start, trim_end, duration, image, height, width, background, bar1, bar2, channel, sr_select, progress=True,
+                top_k=topk, top_p=topp, temperature=temperature, cfg_coef=cfg_coef, extend_stride=MODEL.max_duration-overlap)
+            tags = [str(global_prompt), str(bpm), str(key), str(scale), str(raw_texts), str(duration), str(overlap), str(seed), str(audio_mode), str(input_length), str(channel), str(sr_select), str(model_shrt), str(custom_model_shrt), str(decoder), str(topk), str(topp), str(temperature), str(cfg_coef), str(gen_type)]
+            wav_target, mp4_target, json_target = save_outputs(outs[0], outs_audio[0], tags, gen_type);
+            # Removes the temporary files.
+            for out in outs:
+                os.remove(out)
+            for out in outs_audio:
+                os.remove(out)
+            print(seed)
     return mp4_target, wav_target, outs_backup[0], [mp4_target, wav_target, json_target], seed
-
 
 max_textboxes = 10
 
@@ -1809,6 +1831,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    print(args)
     UNLOAD_MODEL = args.unload_model
     MOVE_TO_CPU = args.unload_to_cpu
     if args.cache:
